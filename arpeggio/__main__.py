@@ -1,4 +1,4 @@
-"""Permite 'python -m arpeggio' ademas del comando instalado 'arpeggio'."""
+"""Allows 'python -m arpeggio' in addition to the installed 'arpeggio' command."""
 
 from .cli import main
 

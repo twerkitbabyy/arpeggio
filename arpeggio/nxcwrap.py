@@ -1,13 +1,13 @@
 """
-Capa que habla con nxc (netexec).
+The layer that talks to nxc (netexec).
 
-Dos trabajos:
-  1. Lanzar nxc y capturar la salida (runner).
-  2. Entender esa salida (parsers) y orquestar la ronda de recon.
+Two jobs:
+  1. Launch nxc and capture the output (runner).
+  2. Make sense of that output (parsers) and orchestrate the recon round.
 
-Regla de oro: SIEMPRE se guarda la salida cruda en el engagement. El
-parseo es "lo mejor que se pueda"; si netexec cambia un formato manana,
-nunca pierdes la info porque el texto crudo sigue ahi (comando `raw`).
+Golden rule: the raw output is ALWAYS stored in the engagement. Parsing
+is best-effort; if netexec changes a format tomorrow, you never lose the
+info because the raw text is still there (the `raw` command).
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ def _strip_ansi(text: str) -> str:
 
 
 def find_nxc() -> str | None:
-    """Localiza el binario: primero nxc, luego netexec."""
+    """Locate the binary: nxc first, then netexec."""
     for name in ("nxc", "netexec"):
         path = shutil.which(name)
         if path:
@@ -41,11 +41,11 @@ def find_nxc() -> str | None:
 class RawResult:
     cmd: list[str]
     returncode: int
-    output: str          # stdout + stderr, ya sin codigos de color
+    output: str          # stdout + stderr, already stripped of color codes
 
 
 class Runner:
-    """Lanza nxc de verdad. Inyectable: en los tests se usa otro con fixtures."""
+    """Launches the real nxc. Injectable: tests swap in one with fixtures."""
 
     def __init__(self, binary: str | None = None, timeout: int = 120):
         self.binary = binary or find_nxc()
@@ -68,16 +68,16 @@ class Runner:
             return RawResult(cmd=args, returncode=proc.returncode, output=out)
         except subprocess.TimeoutExpired:
             return RawResult(cmd=args, returncode=-1,
-                             output=f"[arpeggio] timeout tras {self.timeout}s")
+                             output=f"[arpeggio] timeout after {self.timeout}s")
         except Exception as exc:  # noqa: BLE001
             return RawResult(cmd=args, returncode=-1, output=f"[arpeggio] error: {exc}")
 
 
 # ---------------------------------------------------------------------------
-# Parsers (trabajan sobre texto ya sin ANSI)
+# Parsers (they work on text that is already ANSI-free)
 # ---------------------------------------------------------------------------
 
-# Linea tipo:  SMB  10.10.11.45  445  DC01  <contenido>
+# A line looks like:  SMB  10.10.11.45  445  DC01  <content>
 _LINE = re.compile(
     r"^(?P<proto>SMB|LDAP|WINRM|MSSQL|SSH|RDP|FTP|WMI)\s+"
     r"(?P<ip>\S+)\s+(?P<port>\d+)\s+(?P<name>\S+)\s+(?P<content>.*)$"
@@ -85,7 +85,7 @@ _LINE = re.compile(
 
 
 def _contents(text: str):
-    """Itera (proto, ip, hostname, contenido) por cada linea de nxc."""
+    """Yield (proto, ip, hostname, content) for each nxc line."""
     for line in text.splitlines():
         m = _LINE.match(line.strip())
         if m:
@@ -93,7 +93,7 @@ def _contents(text: str):
 
 
 def auth_ok(text: str, proto: str = "SMB") -> bool:
-    """True si hay un [+] (autenticacion valida) en alguna linea del protocolo."""
+    """True if there is a [+] (valid authentication) on any line of the protocol."""
     for p, _ip, _n, content in _contents(text):
         if p == proto and content.lstrip().startswith("[+]"):
             return True
@@ -101,7 +101,7 @@ def auth_ok(text: str, proto: str = "SMB") -> bool:
 
 
 def parse_host_info(text: str) -> dict:
-    """Saca hostname, dominio, SO y si la firma SMB es obligatoria."""
+    """Pull out hostname, domain, OS and whether SMB signing is required."""
     info = {}
     for proto, _ip, name, content in _contents(text):
         if proto != "SMB":
@@ -125,7 +125,7 @@ def parse_host_info(text: str) -> dict:
 
 
 def parse_shares(text: str) -> list[dict]:
-    """Shares: aparecen tras la cabecera Share/Permissions/Remark."""
+    """Shares: they appear after the Share/Permissions/Remark header."""
     shares, in_table = [], False
     for proto, _ip, _n, content in _contents(text):
         if proto != "SMB":
@@ -144,7 +144,7 @@ def parse_shares(text: str) -> list[dict]:
             name = cols[0] if cols else ""
             perms = cols[1] if len(cols) > 1 else ""
             remark = cols[2] if len(cols) > 2 else ""
-            # Si solo hay 2 columnas suele faltar permisos, no remark
+            # With only 2 columns it is usually permissions that is missing, not remark
             if len(cols) == 2 and not re.search(r"READ|WRITE", perms, re.I):
                 perms, remark = "", cols[1]
             if name:
@@ -153,7 +153,7 @@ def parse_shares(text: str) -> list[dict]:
 
 
 def parse_users(text: str) -> list[dict]:
-    """Usuarios de `--users`: lineas con DOMINIO\\usuario tras la cabecera."""
+    """Users from `--users`: lines with DOMAIN\\user after the header."""
     users, started = [], False
     for proto, _ip, _n, content in _contents(text):
         if proto not in ("SMB", "LDAP"):
@@ -171,7 +171,7 @@ def parse_users(text: str) -> list[dict]:
 
 
 def parse_rid_brute(text: str) -> list[dict]:
-    """Usuarios de `--rid-brute`: solo los SidTypeUser interesan."""
+    """Users from `--rid-brute`: only the SidTypeUser entries matter."""
     users = []
     for _proto, _ip, _n, content in _contents(text):
         m = re.match(r"(\d+):\s+([^\\]+)\\([^\s]+)\s+\(SidType(\w+)\)", content)
@@ -182,7 +182,7 @@ def parse_rid_brute(text: str) -> list[dict]:
 
 
 def parse_groups(text: str) -> list[str]:
-    """Nombres de grupos de `--groups` (se queda con el nombre, ignora el conteo)."""
+    """Group names from `--groups` (keeps the name, ignores the member count)."""
     groups, started = [], False
     for proto, _ip, _n, content in _contents(text):
         if proto != "SMB":
@@ -199,7 +199,7 @@ def parse_groups(text: str) -> list[str]:
 
 
 def parse_pass_pol(text: str) -> tuple[str, str | None]:
-    """Devuelve (texto completo de la politica, umbral de bloqueo si se encuentra)."""
+    """Return (full policy text, lockout threshold if found)."""
     lines, threshold = [], None
     for proto, _ip, _n, content in _contents(text):
         if proto != "SMB":
@@ -219,7 +219,7 @@ def parse_pass_pol(text: str) -> tuple[str, str | None]:
 
 
 def parse_pwned(text: str) -> bool:
-    """True si nxc marca (Pwn3d!): admin local con esa credencial."""
+    """True if nxc marks (Pwn3d!): local admin with that credential."""
     return "Pwn3d!" in text
 
 
@@ -234,10 +234,10 @@ def _dedupe_users(users: list[dict]) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# Orquestacion: la "ronda" de recon
+# Orchestration: the recon "round"
 # ---------------------------------------------------------------------------
 
-# Cada paso: (etiqueta, lista de flags). Se aplican bajo la auth que conecte.
+# Each step: (label, list of flags). Applied under whichever auth connects.
 SMB_STEPS = [
     ("pass-pol", ["--pass-pol"]),
     ("shares", ["--shares"]),
@@ -246,10 +246,10 @@ SMB_STEPS = [
     ("loggedon", ["--loggedon-users"]),
     ("sessions", ["--sessions"]),
 ]
-# (los pasos LDAP se construyen en recon() porque asreproast necesita
-#  una ruta de salida que depende del engagement)
+# (the LDAP steps are built inside recon() because asreproast needs an
+#  output path that depends on the engagement)
 
-# Combos de autenticacion sin credenciales: (etiqueta, usuario, secreto)
+# Credential-less auth combos: (label, user, secret)
 ANON_AUTH = [
     ("null", "", ""),
     ("guest", "guest", ""),
@@ -259,13 +259,12 @@ ANON_AUTH = [
 def recon(engagement, runner: Runner, host: str, log=lambda *_: None,
           asrep_path: str = "/tmp/arpeggio_asrep.txt") -> dict:
     """
-    Hace la ronda completa sobre `host` y vuelca todo en el engagement.
+    Run the full round against `host` and dump everything into the engagement.
 
-    log(msg) es un callback para ir contando que hace, asi la consola
-    puede mostrar progreso en vivo.
-    asrep_path es donde nxc escribe los hashes AS-REP que encuentre.
+    log(msg) is a callback to report progress, so the console can show it
+    live. asrep_path is where nxc writes any AS-REP hashes it finds.
 
-    Devuelve un pequeno resumen para pintar al terminar.
+    Returns a small summary to print at the end.
     """
     ldap_steps = [
         ("ldap-users", ["--users"]),
@@ -274,10 +273,10 @@ def recon(engagement, runner: Runner, host: str, log=lambda *_: None,
     summary = {"host": host, "auth_worked": [], "users": 0, "shares": 0,
                "groups": 0, "pass_pol": False}
 
-    # Paso 0: comprobar que auths conectan (y de paso sacar info del host).
+    # Step 0: check which auths connect (and grab host info along the way).
     working = []
     for label, user, secret in ANON_AUTH:
-        log(f"[{host}] probando sesion {label}...")
+        log(f"[{host}] trying {label} session...")
         res = runner.run("smb", host, user, secret, False, [])
         ok = auth_ok(res.output, "SMB")
         engagement.add_run(host, "SMB", label, "(login)", " ".join(res.cmd),
@@ -288,12 +287,12 @@ def recon(engagement, runner: Runner, host: str, log=lambda *_: None,
         if ok:
             working.append((label, user, secret))
             summary["auth_worked"].append(label)
-            log(f"[{host}] sesion {label} OK")
+            log(f"[{host}] {label} session OK")
 
     if not working:
-        log(f"[{host}] ni null ni guest conectan por SMB; sigo con LDAP anonimo")
+        log(f"[{host}] neither null nor guest connect over SMB; continuing with anonymous LDAP")
 
-    # Pasos SMB bajo cada auth que haya conectado.
+    # SMB steps under each auth that connected.
     for label, user, secret in working:
         for step, flags in SMB_STEPS:
             log(f"[{host}] {label} {step}...")
@@ -303,9 +302,9 @@ def recon(engagement, runner: Runner, host: str, log=lambda *_: None,
                                auth_ok(res.output, "SMB"), res.output)
             _absorb(engagement, host, step, res.output, summary)
 
-        # Respaldo: si --users no saco a nadie, tirar de rid-brute.
+        # Fallback: if --users found nobody, fall back to rid-brute.
         if summary["users"] == 0:
-            log(f"[{host}] {label} --users vino vacio, probando --rid-brute...")
+            log(f"[{host}] {label} --users came back empty, trying --rid-brute...")
             res = runner.run("smb", host, user, secret, False, ["--rid-brute"])
             engagement.add_run(host, "SMB", label, "--rid-brute",
                                " ".join(res.cmd), res.returncode,
@@ -314,7 +313,7 @@ def recon(engagement, runner: Runner, host: str, log=lambda *_: None,
                 engagement.add_user(**u)
                 summary["users"] += 1
 
-    # LDAP anonimo (a veces suelta usuarios aunque SMB este cerrado).
+    # Anonymous LDAP (sometimes hands out users even when SMB is closed).
     for step, flags in ldap_steps:
         log(f"[{host}] ldap-anon {step}...")
         res = runner.run("ldap", host, "", "", False, flags)
@@ -336,7 +335,7 @@ def recon(engagement, runner: Runner, host: str, log=lambda *_: None,
 
 
 def _absorb(engagement, host: str, step: str, output: str, summary: dict):
-    """Mete en el engagement lo que haya salido de un paso concreto."""
+    """Store into the engagement whatever a given step produced."""
     if step == "shares":
         for s in parse_shares(output):
             engagement.add_share(host, s["name"], s["permissions"], s["remark"])

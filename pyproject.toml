@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "arpeggio"
 version = "0.1.0"
-description = "Consola interactiva de recon y gestion de credenciales de Active Directory sobre netexec (nxc)"
+description = "Interactive Active Directory recon and credential console on top of netexec (nxc)"
 readme = "README.md"
 requires-python = ">=3.9"
 license = "MIT"

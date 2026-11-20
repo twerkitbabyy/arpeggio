@@ -1,20 +1,20 @@
 # arpeggio
 
-Consola interactiva para recon y gestion de credenciales en Active
-Directory, construida sobre [netexec](https://github.com/Pennant/NetExec) (nxc).
+Interactive console for Active Directory recon and credential management,
+built on top of [netexec](https://github.com/Pennant/NetExec) (nxc).
 
-La dejas abierta durante una maquina o un prolab. Lanzas `recon` contra
-un host y toda la enumeracion sin credenciales (sesion nula + guest, SMB
-+ LDAP) se guarda dentro del programa. Cuando encuentras una credencial
-la metes con `add` y con `spray` la pruebas contra todos los hosts de
-golpe, marcando donde entra y donde eres admin. Todo se autoguarda en un
-JSON por engagement, asi que puedes cerrarlo y seguir manana.
+You keep it open during a box or a prolab. You run `recon` against a host
+and all the credential-less enumeration (null + guest session, SMB +
+LDAP) is kept inside the program. When you find a credential you add it
+with `add`, and `spray` tests it against every host at once, marking
+where it works and where you are admin. Saved engagements autosave to a
+per-engagement JSON, so you can close it and pick up tomorrow.
 
-Nace de una pereza concreta: no tener que escribir siempre a mano los 6+
-comandos de recon (`--shares`, `--users`, `--rid-brute`, `--pass-pol`...)
-con sesion nula **y** con guest cada vez que pisas una maquina.
+It was born from one specific chore: not having to type the 6+ recon
+commands (`--shares`, `--users`, `--rid-brute`, `--pass-pol`...) by hand
+with a null session **and** with guest every time you land on a machine.
 
-## Instalacion
+## Installation
 
 ```bash
 git clone https://github.com/twerkitbabyy/arpeggio
@@ -22,116 +22,116 @@ cd arpeggio
 ./install.sh
 ```
 
-El `install.sh` crea un entorno aislado propio (no toca los paquetes del
-sistema, Arch lo agradece), instala arpeggio dentro y deja el comando
-`arpeggio` en `~/.local/bin`. Abre otra terminal y ya lo tienes disponible
-desde cualquier carpeta. Si `~/.local/bin` no esta en tu PATH, el script
-te lo avisa y te da la linea que anadir al `~/.zshrc`.
+`install.sh` creates its own isolated environment (it does not touch your
+system packages, which Arch appreciates), installs arpeggio inside it and
+drops the `arpeggio` command in `~/.local/bin`. Open a new terminal and
+you can call it from any folder. If `~/.local/bin` is not in your PATH,
+the script warns you and gives you the line to add to `~/.zshrc`.
 
-Para desinstalar: `./uninstall.sh` (no borra tus engagements guardados).
+To uninstall: `./uninstall.sh` (it does not delete your saved engagements).
 
-Necesita `nxc`/`netexec` aparte en el PATH para `recon` y `spray`
-(`pipx install netexec`). Sin ellos el resto de la consola funciona
-igual, y tienes `--mock`.
+It needs `nxc`/`netexec` separately in your PATH for `recon` and `spray`
+(`pipx install netexec`). Without them the rest of the console works
+fine, and you have `--mock`.
 
-Tambien puedes correrlo sin instalar, desde el repo:
+You can also run it without installing, straight from the repo:
 
 ```bash
 python3 -m pip install rich prompt_toolkit
 python3 -m arpeggio
 ```
 
-## Persistencia: por defecto no guarda nada
+## Persistence: nothing is saved by default
 
-arpeggio arranca **en memoria**. Mientras no digas lo contrario, no escribe
-nada en el disco: haces una maquina simple, cierras, y no queda rastro.
+arpeggio starts **in memory**. Until you say otherwise it writes nothing
+to disk: you do a simple box, close it, and no trace is left.
 
-Cuando quieras conservar una sesion (p. ej. un prolab como Dante),
-dentro de la consola:
-
-```
-arpeggio> keep dante        # a partir de aqui se guarda, con el nombre 'dante'
-```
-
-Desde ese momento se autoguarda. Al dia siguiente, aunque reinicies:
+When you want to keep a session (e.g. a prolab like Dante), inside the
+console:
 
 ```
-arpeggio> engagements       # lista lo guardado -> ahi sale 'dante'
-arpeggio> load dante        # lo carga tal cual lo dejaste
-arpeggio> forget dante      # cuando ya no lo quieras, lo borra (pide confirmacion)
+arpeggio> keep dante        # from here on it is saved, under the name 'dante'
 ```
 
-Lo guardado vive **todo en una carpeta**: `~/.local/share/arpeggio/`
-(o `$XDG_DATA_HOME/arpeggio`). Nunca se escribe en la carpeta desde la que
-lanzas. Dentro, por cada engagement conservado:
+From that point it autosaves. The next day, even after a reboot:
 
-| fichero | que es |
+```
+arpeggio> engagements       # lists what is saved -> 'dante' shows up here
+arpeggio> load dante        # loads it exactly as you left it
+arpeggio> forget dante      # when you no longer want it, deletes it (asks to confirm)
+```
+
+Everything saved lives in **one folder**: `~/.local/share/arpeggio/`
+(or `$XDG_DATA_HOME/arpeggio`). Nothing is ever written to the folder you
+launch from. Inside, for each kept engagement:
+
+| file | what it is |
 |---|---|
-| `<nombre>.json` | el engagement (hosts, usuarios, creds, shares, salida cruda) |
-| `<nombre>.asrep` | hashes AS-REP del recon, listos para crackear |
-| `history` | historial de comandos de la consola (uno solo, como el del shell) |
+| `<name>.json` | the engagement (hosts, users, creds, shares, raw output) |
+| `<name>.asrep` | AS-REP hashes from recon, ready to crack |
+| `history` | the console command history (a single file, like the shell's) |
 
-El comando `where` te dice en todo momento si la sesion se esta guardando
-y donde. Para empezar de cero: `rm -rf ~/.local/share/arpeggio/`.
+The `where` command tells you at any moment whether the session is being
+saved and where. To start fresh: `rm -rf ~/.local/share/arpeggio/`.
 
-## Uso
+## Usage
 
 ```bash
-arpeggio              # sesion en memoria (no se guarda hasta que hagas 'keep')
-arpeggio dante        # abre/crea el engagement 'dante' ya conservado
-arpeggio -f /ruta/x.json   # un JSON en una ruta concreta, si lo necesitas
-arpeggio --mock       # sin nxc, con salida de ejemplo (para cacharrear)
+arpeggio              # in-memory session (not saved until you run 'keep')
+arpeggio dante        # open/create the already-kept engagement 'dante'
+arpeggio -f /path/x.json   # a JSON at a specific path, if you need it
+arpeggio --mock       # no nxc, sample output (to play around)
 ```
 
-Dentro, `help` lo lista todo. Flujo tipico:
+Inside, `help` lists everything. Typical flow:
 
 ```
-arpeggio> target 10.10.11.45 DC01    # fija el host activo
-arpeggio> recon                      # ronda completa null+guest, SMB+LDAP
-arpeggio> users                      # lo que ha sacado
+arpeggio> target 10.10.11.45 DC01    # set the active host
+arpeggio> recon                      # full null+guest round, SMB+LDAP
+arpeggio> users                      # what it found
 arpeggio> shares
-arpeggio> passpol                    # OJO al umbral de bloqueo antes de spray
+arpeggio> passpol                    # MIND the lockout threshold before spraying
 arpeggio> add cred jdoe 'Summer2026!'
 arpeggio> add hash administrator aad3b4...:31d6cfe0d16ae931b73c59d7e0c089c0
-arpeggio> spray all                  # prueba todas las creds x todos los hosts (smb+winrm)
-arpeggio> creds                      # donde valen y donde eres admin (Pwn3d)
+arpeggio> spray all                  # test every cred against every host (smb+winrm)
+arpeggio> creds                      # where they work and where you are admin (Pwn3d)
 ```
 
-### Que hace `recon`
+### What `recon` does
 
-Sobre el host:
+On the host:
 
-1. Prueba sesion **nula** y **guest** por SMB, y se queda con la(s) que conecte(n).
-2. Bajo esa auth lanza: `--pass-pol`, `--shares`, `--users`, `--groups`, `--loggedon-users`, `--sessions`.
-3. Si `--users` viene vacio, tira de `--rid-brute` automaticamente.
-4. Prueba **LDAP con bind anonimo** (`--users` y `--asreproast`), que a veces suelta usuarios con el SMB cerrado.
+1. Tries a **null** and a **guest** SMB session, and keeps whichever connect(s).
+2. Under that auth it runs: `--pass-pol`, `--shares`, `--users`, `--groups`, `--loggedon-users`, `--sessions`.
+3. If `--users` comes back empty, it falls back to `--rid-brute` automatically.
+4. Tries **LDAP with an anonymous bind** (`--users` and `--asreproast`), which sometimes hands out users even with SMB closed.
 
-Todo cae en el almacen y la salida cruda de cada comando queda guardada
-(comando `log` para la lista, `raw <id>` para verla entera). Si netexec
-cambia algun formato y el parseo falla, nunca pierdes la info: el texto
-crudo sigue ahi.
+Everything goes into the store, and the raw output of each command is
+kept (`log` for the list, `raw <id>` to see it in full). If netexec
+changes some format and parsing fails, you never lose the info: the raw
+text is still there.
 
-## Estructura
+## Layout
 
 ```
 arpeggio/
-  install.sh / uninstall.sh   instalador aislado + comando en ~/.local/bin
-  pyproject.toml              paquete y dependencias (entry point 'arpeggio')
+  install.sh / uninstall.sh   isolated installer + command in ~/.local/bin
+  pyproject.toml              package and dependencies (entry point 'arpeggio')
   arpeggio/
-    cli.py        la consola interactiva y las tablas
-    core.py       modelo de datos (Host, User, Cred, Share, Run) y guardado JSON
-    nxcwrap.py    runner de nxc, parsers y la orquestacion de la ronda de recon
-    mockrunner.py runner falso con salida de ejemplo para --mock y los tests
+    cli.py        the interactive console and the tables
+    core.py       data model (Host, User, Cred, Share, Run) and JSON storage
+    nxcwrap.py    nxc runner, parsers and the recon-round orchestration
+    mockrunner.py fake runner with sample output for --mock and the tests
   tests/
-    test_smoke.py prueba parsers, recon, spray y roundtrip JSON sin nxc
+    test_smoke.py tests parsers, recon, spray and JSON roundtrip without nxc
 ```
 
-La logica de nxc esta separada de la interfaz a proposito: si algun dia
-la quieres con paneles de verdad (Textual), solo cambias `cli.py`.
+The nxc logic is kept apart from the interface on purpose: if one day you
+want it with real panels (Textual), you only touch `cli.py`.
 
-## Avisos
+## Notes
 
-- Herramienta para labs y engagements autorizados.
-- `spray` prueba **un** secreto conocido por usuario, no un diccionario,
-  asi que el riesgo de bloqueo es bajo; aun asi te recuerda el umbral de
-  bloqueo del dominio si lo ha visto en `--pass-pol`.
+- Tool for authorized labs and engagements.
+- `spray` tests **one** known secret per user, not a wordlist, so the
+  lockout risk is low; it still reminds you of the domain lockout
+  threshold if it saw one in `--pass-pol`.

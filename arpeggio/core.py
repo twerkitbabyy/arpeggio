@@ -1,10 +1,10 @@
 """
-Modelo de datos y almacenamiento de arpeggio.
+Data model and storage for arpeggio.
 
-Aqui no hay nada de nxc ni de interfaz: solo las "cosas" que vas
-descubriendo en un engagement (hosts, usuarios, credenciales, shares,
-y un registro de todo lo que se ha lanzado) y como se guardan y cargan
-de un JSON. Es la memoria del programa.
+No nxc and no interface here: just the "things" you discover during an
+engagement (hosts, users, credentials, shares, and a log of everything
+that was launched) and how they are saved to and loaded from a JSON
+file. This is the program's memory.
 """
 
 from __future__ import annotations
@@ -19,11 +19,11 @@ from typing import Optional
 
 def data_dir() -> Path:
     """
-    Carpeta unica donde vive TODO el estado de arpeggio.
+    The single folder where ALL of arpeggio's state lives.
 
-    Respeta XDG_DATA_HOME si lo tienes, si no ~/.local/share/arpeggio.
-    Aqui caen los JSON de cada engagement, el historial y los hashes
-    AS-REP. Nunca se escribe nada en la carpeta desde la que lanzas.
+    Honours XDG_DATA_HOME if set, otherwise ~/.local/share/arpeggio.
+    The per-engagement JSON files, the history and the AS-REP hashes all
+    land here. Nothing is ever written to the folder you launch from.
     """
     base = os.environ.get("XDG_DATA_HOME") or (Path.home() / ".local" / "share")
     d = Path(base) / "arpeggio"
@@ -36,7 +36,7 @@ def _now() -> str:
 
 
 def _key(username: str, domain: str) -> str:
-    """Clave para deduplicar usuarios/credenciales, insensible a mayusculas."""
+    """Dedup key for users/credentials, case-insensitive."""
     return f"{(domain or '').lower()}\\{(username or '').lower()}"
 
 
@@ -46,9 +46,9 @@ class Host:
     hostname: str = ""
     domain: str = ""
     os: str = ""
-    signing: Optional[bool] = None       # firma SMB obligatoria
-    smb: Optional[bool] = None           # responde a SMB
-    ldap: Optional[bool] = None          # responde a LDAP
+    signing: Optional[bool] = None       # SMB signing required
+    smb: Optional[bool] = None           # answers on SMB
+    ldap: Optional[bool] = None          # answers on LDAP
     notes: str = ""
 
 
@@ -56,7 +56,7 @@ class Host:
 class User:
     username: str
     domain: str = ""
-    source: str = ""                     # de donde salio: --users, rid-brute, ldap, manual
+    source: str = ""                     # where it came from: --users, rid-brute, ldap, manual
     rid: Optional[int] = None
     notes: str = ""
 
@@ -64,17 +64,17 @@ class User:
 @dataclass
 class Cred:
     username: str
-    secret: str                          # contrasena, o hash NTLM si kind == "hash"
+    secret: str                          # password, or NTLM hash if kind == "hash"
     kind: str = "password"               # "password" | "hash"
     domain: str = ""
-    valid_on: list[str] = field(default_factory=list)   # IPs donde autentica
-    admin_on: list[str] = field(default_factory=list)   # IPs donde es admin (Pwn3d)
+    valid_on: list[str] = field(default_factory=list)   # IPs where it authenticates
+    admin_on: list[str] = field(default_factory=list)   # IPs where it is admin (Pwn3d)
     notes: str = ""
 
 
 @dataclass
 class Share:
-    host: str                            # IP del host
+    host: str                            # host IP
     name: str
     permissions: str = ""
     remark: str = ""
@@ -82,12 +82,12 @@ class Share:
 
 @dataclass
 class Run:
-    """Un comando nxc que se lanzo, con su salida cruda guardada entera."""
+    """An nxc command that was launched, with its full raw output kept."""
     id: int
     ts: str
     host: str
     proto: str
-    auth: str                            # etiqueta legible: null, guest, user:pass...
+    auth: str                            # readable label: null, guest, user:pass...
     flags: str
     cmd: str
     returncode: int
@@ -96,26 +96,26 @@ class Run:
 
 
 class Engagement:
-    """Todo el estado de un trabajo. Se autoguarda tras cada cambio."""
+    """All the state of one job. Autosaves after every change."""
 
     def __init__(self, name: str = "default", path: Optional[Path] = None):
         self.name = name
-        self.keep = False                # False = sesion en memoria, no toca disco
-        self.domain = ""                 # dominio "principal" cuando se detecta
+        self.keep = False                # False = in-memory session, never touches disk
+        self.domain = ""                 # "main" domain once detected
         self.created = _now()
         self.hosts: dict[str, Host] = {}
         self.users: dict[str, User] = {}
         self.creds: list[Cred] = []
         self.shares: list[Share] = []
         self.groups: list[str] = []
-        self.pass_pol: str = ""          # texto de la politica de contrasenas
+        self.pass_pol: str = ""          # password policy text
         self.lockout_threshold: Optional[str] = None
         self.runs: list[Run] = []
         self._run_counter = 0
         self._path = path
         self._autosave = True
 
-    # ---- altas / merge (todo pasa por aqui para deduplicar y autoguardar) ----
+    # ---- inserts / merge (everything goes through here to dedup and autosave) ----
 
     def add_host(self, ip: str, **kw) -> Host:
         h = self.hosts.get(ip)
@@ -194,7 +194,7 @@ class Engagement:
                 return r
         return None
 
-    # ---- serializacion ----
+    # ---- serialization ----
 
     def to_dict(self) -> dict:
         return {
@@ -216,7 +216,7 @@ class Engagement:
     @classmethod
     def from_dict(cls, d: dict, path: Optional[Path] = None) -> "Engagement":
         e = cls(name=d.get("name", "default"), path=path)
-        e.keep = d.get("keep", True)     # si esta en disco, por defecto es permanente
+        e.keep = d.get("keep", True)     # if it is on disk, default to permanent
         e.domain = d.get("domain", "")
         e.created = d.get("created", _now())
         e._run_counter = d.get("run_counter", 0)
@@ -230,7 +230,7 @@ class Engagement:
         e.runs = [Run(**r) for r in d.get("runs", [])]
         return e
 
-    # ---- disco ----
+    # ---- disk ----
 
     def save(self):
         if not self._autosave or self._path is None:
@@ -253,7 +253,7 @@ class Engagement:
 
     @classmethod
     def in_memory(cls, name: str = "scratch") -> "Engagement":
-        """Sesion que NO toca el disco. Se promueve con keep()."""
+        """A session that does NOT touch disk. Promoted with keep()."""
         e = cls(name=name, path=None)
         e.keep = False
         e._autosave = False
@@ -262,8 +262,8 @@ class Engagement:
 
 def list_engagements(dd: Optional[Path] = None) -> list[dict]:
     """
-    Lista los engagements guardados en la carpeta de datos, sin cargarlos
-    enteros: solo lo justo para el comando `engagements`.
+    List the saved engagements in the data folder without loading them
+    fully: just enough for the `engagements` command.
     """
     dd = dd or data_dir()
     out = []

@@ -1,8 +1,8 @@
 """
-Runner falso que devuelve salida de nxc de ejemplo, para probar la
-interfaz y los parsers sin nxc ni maquinas. Arranca con:  --mock
+Fake runner that returns sample nxc output, to test the interface and
+the parsers without nxc or any machines. Start with:  --mock
 
-La salida imita el formato real de netexec (DC de un dominio ficticio).
+The output mimics the real netexec format (DC of a fictional domain).
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ _SHARES = _LOGIN_OK + (
     f"{_HOSTLINE}           Data            READ,WRITE      \n"
 )
 
-_USERS_EMPTY = _LOGIN_OK  # --users no devuelve nada util -> fuerza rid-brute
+_USERS_EMPTY = _LOGIN_OK  # --users returns nothing useful -> forces rid-brute
 
 _RIDBRUTE = _LOGIN_OK + (
     f"{_HOSTLINE}           498: {DOM.split('.')[0].upper()}\\Enterprise Read-only Domain Controllers (SidTypeGroup)\n"
@@ -100,7 +100,7 @@ class MockRunner:
             return RawResult(cmd=cmd, returncode=0, output=out)
 
         if not flags:
-            # login simple o spray
+            # plain login or spray
             if secret in ("", None) or user in ("", "guest"):
                 return RawResult(cmd=cmd, returncode=0, output=_LOGIN_OK)
             out = _SPRAY_OK if (user == "jdoe" and secret == "Summer2026!") else _SPRAY_FAIL
