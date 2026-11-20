@@ -19,11 +19,13 @@ echo "[*] Isolated environment at: $venv"
 python3 -m venv "$venv"
 "$venv/bin/pip" install --quiet --upgrade pip
 
-echo "[*] Installing arpeggio and dependencies..."
-"$venv/bin/pip" install --quiet "$here"
+echo "[*] Installing arpeggio and dependencies (editable)..."
+# editable install: the command points straight at these source files, so a
+# later 'git pull' updates the running tool with no reinstall needed.
+"$venv/bin/pip" install --quiet -e "$here"
 
-# clean up the build junk pip/setuptools leave behind in the repo
-rm -rf "$here/build" "$here"/*.egg-info
+# drop the build scratch dir (the .egg-info is needed by the editable install)
+rm -rf "$here/build"
 
 mkdir -p "$bin_dir"
 ln -sf "$venv/bin/arpeggio" "$bin_dir/arpeggio"
